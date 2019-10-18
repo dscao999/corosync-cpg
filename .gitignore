@@ -51,5 +51,6 @@ Module.symvers
 Mkfile.old
 dkms.conf
 
+*.swp
 cscope.files
 cpgmsg

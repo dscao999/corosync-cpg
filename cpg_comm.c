@@ -14,8 +14,6 @@
 #define unlikely(e)	__builtin_expect(e, 0)
 #define likely(e)	__builtin_expect(e, 1)
 
-#define		MiB2	5242880
-
 struct msghead {
 	uint32_t nodeid;
 	unsigned len;
@@ -76,7 +74,8 @@ static void mesg_arrived(cpg_handle_t hd, const struct cpg_name *name,
 		return;
 	}
 	assert(hd == cpg->hand);
-	if (nodeid == cpg->nodeid || name->length >= 32 || msglen > MiB2 ||
+	if (nodeid == cpg->nodeid || name->length >= 32 ||
+			msglen > CPG_CHUNK_SIZE ||
 			memcmp(name->value, cpg->group, name->length) != 0)
 		return;
 	head.len = msglen;
@@ -157,16 +156,22 @@ int cpgcomm_read(struct cpg_comm *cpg, uint32_t *nodeid, void *buf, int buflen)
 
 void cpgcomm_write(struct cpg_comm *cpg, const void *msg, int len)
 {
-	int cpgret;
+	int cpgret, count;
+	static const struct timespec tm = {.tv_sec = 0, .tv_nsec = 200000000};
 
-	if (unlikely(len > MiB2)) {
+	if (unlikely(len > CPG_CHUNK_SIZE)) {
 		logmsg(LOG_ERR, "Block size: %d exceeds limit.\n", len);
 		return;
 	}
+	count = 0;
 	cpg->iovec.iov_base = malloc(len);
 	cpg->iovec.iov_len =  len;
 	memcpy(cpg->iovec.iov_base, msg, len);
 	cpgret = cpg_mcast_joined(cpg->hand, CPG_TYPE_FIFO, &cpg->iovec, 1);
+	while (cpgret == CS_ERR_TRY_AGAIN && count < 10) {
+		count++;
+		nanosleep(&tm, NULL);
+	}
 	if (unlikely(cpgret != CS_OK))
 		logmsg(LOG_ERR, "cpg_mcast_joined failed: %d\n", cpgret);
 	free(cpg->iovec.iov_base);

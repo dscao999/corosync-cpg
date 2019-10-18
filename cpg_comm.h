@@ -3,6 +3,8 @@
 #include <pthread.h>
 #include <corosync/cpg.h>
 
+#define CPG_CHUNK_SIZE	3145728
+
 struct cpg_comm {
 	cpg_handle_t hand;
 	pthread_t thid;
