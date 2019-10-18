@@ -13,6 +13,9 @@
 #include "cpg_comm.h"
 #include "loglog.h"
 
+#define unlikely(x)	__builtin_expect(x, 0)
+#define CHUNK_SIZE	8192
+
 static volatile int finish = 0;
 
 void sig_handler(int sig)
@@ -28,10 +31,10 @@ static void *watch_mesg(void *arg)
 	int num;
 	uint32_t nodeid;
 
-	msgbuf = malloc(4096);
+	msgbuf = malloc(CHUNK_SIZE);
 	do {
-		num = cpgcomm_read(cpg, &nodeid, msgbuf, 4096);
-		if (num >= 4096)
+		num = cpgcomm_read(cpg, &nodeid, msgbuf, CHUNK_SIZE);
+		if (num >= CHUNK_SIZE)
 			logmsg(LOG_ERR, "Message overflow!\n");
 		else if (num > 0) {
 			msgbuf[num] = 0;
@@ -42,12 +45,37 @@ static void *watch_mesg(void *arg)
 	return NULL;
 }
 
+static int send_file(FILE *fin, struct cpg_comm *cpg)
+{
+	int nmb;
+	unsigned int len;
+	char *buf;
+
+	len = 0;
+	buf = malloc(CHUNK_SIZE);
+	if (!buf) {
+		logmsg(LOG_CRIT, "Out of Memory!\n");
+		return 0;
+	}
+	do {
+		nmb = fread(buf, 1, CHUNK_SIZE, fin);
+		if (unlikely(ferror(fin)))
+			logmsg(LOG_ERR, "fread error: %d\n", errno);
+		if (nmb > 0)
+			cpgcomm_write(cpg, buf, nmb);
+		len += nmb;
+	} while (!feof(fin));
+	free(buf);
+
+	return len;
+}
+
 int main(int argc, char *argv[])
 {
 	struct cpg_comm *cpg;
 	pthread_t thid;
-	int retv, sysret, nmb;
-	char *ln, *buf;
+	int retv, sysret;
+	char *ln;
 	FILE *fin;
 	struct sigaction sact;
 
@@ -66,7 +94,6 @@ int main(int argc, char *argv[])
 		retv = 3;
 		goto exit_10;
 	}
-	buf = malloc(4096);
 	
 	sigaction(SIGINT, NULL, &sact);
 	sact.sa_handler = sig_handler;
@@ -81,26 +108,14 @@ int main(int argc, char *argv[])
 			continue;
 		}
 		fin = fopen(ln, "rb");
-		if (!fin) {
-			cpgcomm_write(cpg, ln, strlen(ln));
-		} else {
-			strcpy(buf, "File: ");
-			strcat(buf, ln);
-			strcat(buf, "\n");
-			cpgcomm_write(cpg, buf, strlen(buf));
-			nmb = fread(buf, 1, 4096, fin);
-			while (!feof(fin)) {
-				cpgcomm_write(cpg, buf, nmb);
-				nmb = fread(buf, 1, 4096, fin);
-			}
-			if (nmb > 0)
-				cpgcomm_write(cpg, buf, nmb);
+		cpgcomm_write(cpg, ln, strlen(ln));
+		if (fin) {
+			send_file(fin, cpg);
 			fclose(fin);
 		}
-		free(ln);
+
 	} while (finish == 0);
 
-	free(buf);
 	cpg->exflag = 1;
 	pthread_join(thid, NULL);
 
