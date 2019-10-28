@@ -11,9 +11,6 @@
 #include "cpg_comm.h"
 #include "loglog.h"
 
-#define unlikely(e)	__builtin_expect(e, 0)
-#define likely(e)	__builtin_expect(e, 1)
-
 struct msghead {
 	uint32_t nodeid;
 	unsigned len;

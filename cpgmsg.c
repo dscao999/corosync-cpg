@@ -15,8 +15,6 @@
 #include "cpg_comm.h"
 #include "loglog.h"
 
-#define unlikely(x)	__builtin_expect(x, 0)
-
 static volatile int finish = 0;
 static const char *file_b_mark = "File Follows: ";
 static const char *file_e_mark = "xFile End!x";
