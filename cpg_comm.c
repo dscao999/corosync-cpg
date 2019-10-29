@@ -11,11 +11,6 @@
 #include "cpg_comm.h"
 #include "loglog.h"
 
-struct msghead {
-	uint32_t nodeid;
-	unsigned len;
-};
-
 static void config_event(cpg_handle_t hd, const struct cpg_name *name,
 		const struct cpg_address *mem, size_t memlen,
 		const struct cpg_address *lem, size_t lemlen,
@@ -90,7 +85,7 @@ void cpgcomm_write(struct cpg_comm *cpg, void *msg, int len)
 	count = 0;
 	cpg->iovec.iov_base = msg;
 	cpg->iovec.iov_len =  len;
-	memcpy(cpg->iovec.iov_base, msg, len);
+//	memcpy(cpg->iovec.iov_base, msg, len);
 	cpgret = cpg_mcast_joined(cpg->hand, CPG_TYPE_FIFO, &cpg->iovec, 1);
 	while (cpgret == CS_ERR_TRY_AGAIN && count < 10) {
 		count++;
@@ -105,15 +100,14 @@ void cpgcomm_write(struct cpg_comm *cpg, void *msg, int len)
 static void *watch_mesg(void *arg)
 {
 	struct cpg_comm *cpg = arg;
-	static const struct timespec tm = {.tv_sec = 0, .tv_nsec = 100000000};
 	int cpgret;
 
 	do {
-		cpgret = cpg_dispatch(cpg->hand, CS_DISPATCH_ALL);
+		cpgret = cpg_dispatch(cpg->hand, CS_DISPATCH_ONE);
 		if (unlikely(cpgret != CS_OK))
 			logmsg(LOG_ERR, "cpg_dispatch failed: %d\n", cpgret);
-		nanosleep(&tm, NULL);
 	} while (cpg->exflag == 0);
+	cpg->dispatching = 0;
 	return NULL;
 }
 
@@ -155,8 +149,10 @@ struct cpg_comm *cpgcomm_init(const char *gname,
 		logmsg(LOG_ERR, "cpg_join failed: %d\n", cpgret);
 		goto exit_30;
 	}
+	cpg->dispatching = 1;
 	sysret = pthread_create(&cpg->thid, NULL, watch_mesg, cpg);
 	if (unlikely(sysret != 0)) {
+		cpg->dispatching = 0;
 		logmsg(LOG_ERR, "pthread create failed: %d\n", sysret);
 		goto exit_40;
 	}
@@ -177,11 +173,14 @@ void cpgcomm_exit(struct cpg_comm *cpg)
 {
 	struct cpg_name gr;
 	int cpgret;
+	static const struct timespec tm = {0, 100000000};
 
 	cpg->exflag = 1;
 	gr.length = strlen(cpg->group);
 	memcpy(gr.value, cpg->group, gr.length);
 	cpgret = cpg_leave(cpg->hand, &gr);
+	while (cpg->dispatching)
+		nanosleep(&tm, NULL);
 	if (unlikely(cpgret != CS_OK))
 		logmsg(LOG_ERR, "cpg leave failed: %d\n", cpgret);
 	pthread_join(cpg->thid, NULL);

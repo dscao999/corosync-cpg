@@ -11,7 +11,7 @@ struct cpg_comm {
 	pthread_t thid;
 	struct iovec iovec;
 	uint32_t nodeid;
-	volatile int exflag;
+	volatile int exflag, dispatching;
 	char group[32];
 };
 
