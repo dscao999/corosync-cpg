@@ -107,7 +107,6 @@ static void *watch_mesg(void *arg)
 		if (unlikely(cpgret != CS_OK))
 			logmsg(LOG_ERR, "cpg_dispatch failed: %d\n", cpgret);
 	} while (cpg->exflag == 0);
-	cpg->dispatching = 0;
 	return NULL;
 }
 
@@ -150,10 +149,8 @@ struct cpg_comm *cpgcomm_init(const char *gname,
 		logmsg(LOG_ERR, "cpg_join failed: %d\n", cpgret);
 		goto exit_30;
 	}
-	cpg->dispatching = 1;
 	sysret = pthread_create(&cpg->thid, NULL, watch_mesg, cpg);
 	if (unlikely(sysret != 0)) {
-		cpg->dispatching = 0;
 		logmsg(LOG_ERR, "pthread create failed: %d\n", sysret);
 		goto exit_40;
 	}
@@ -174,14 +171,11 @@ void cpgcomm_exit(struct cpg_comm *cpg)
 {
 	struct cpg_name gr;
 	int cpgret;
-	static const struct timespec tm = {0, 100000000};
 
 	cpg->exflag = 1;
 	gr.length = strlen(cpg->group);
 	memcpy(gr.value, cpg->group, gr.length);
 	cpgret = cpg_leave(cpg->hand, &gr);
-	while (cpg->dispatching)
-		nanosleep(&tm, NULL);
 	if (unlikely(cpgret != CS_OK))
 		logmsg(LOG_ERR, "cpg leave failed: %d\n", cpgret);
 	pthread_join(cpg->thid, NULL);
