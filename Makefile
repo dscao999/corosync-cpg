@@ -7,7 +7,7 @@ LDFLAGS = -g
 all: cpgmsg
 
 cpgmsg: cpgmsg.o cpg_comm.o
-	$(LINK.o) $^ -lreadline -lcpg -lpthread -o $@
+	$(LINK.o) $^ ecc256/ripemd160.o -lreadline -lcpg -lgmp -lpthread -o $@
 
 clean:
 	rm -f cpgmsg

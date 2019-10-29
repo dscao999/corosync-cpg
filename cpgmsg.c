@@ -14,6 +14,7 @@
 #include <assert.h>
 #include "cpg_comm.h"
 #include "loglog.h"
+#include "ecc256/ripemd160.h"
 
 static volatile int finish = 0;
 
@@ -23,29 +24,103 @@ void sig_handler(int sig)
 		finish = 1;
 }
 
-struct pkthead {
-	char fname[64];
+struct package_head {
+	unsigned char ripemd[20];
+	unsigned char confirm;
 	char msg[0];
 };
 
-static void msg_arrived(uint32_t node, const void *msg, size_t len)
-{
-	const struct pkthead *mp = msg;
+struct send_entry {
+	struct package_head *bufhead;
+	unsigned long maxlen;
+	unsigned char vote;
+};
 
-	if (mp->fname[0] == 0)
+static struct send_entry snd_queue[8];
+static int qh = 0, qt = 0;
+static inline int queue_idx_next(int idx)
+{
+	return (idx + 1) & 0x7;
+}
+static inline void queue_free(void)
+{
+	int i;
+
+	for (i = 0; i < 8; i++)
+		if (snd_queue[i].bufhead)
+			free(snd_queue[i].bufhead);
+}
+static inline void queue_tail_advance(void)
+{
+	int head = qh, tail = qt;
+	struct send_entry *entry;
+
+	while (tail != head) {
+		entry = snd_queue + tail;
+		if (entry->vote != 0)
+			break;
+		else
+			tail = queue_idx_next(tail);
+	}
+	qt = tail;
+}
+
+static inline void queue_confirm(const unsigned char ripemd[20])
+{
+	int head = qh, tail = qt;
+	int i;
+	struct send_entry *entry;
+
+	for (i = tail; i != head; i = queue_idx_next(i)) {
+		entry = snd_queue + i;
+		if (memcmp(ripemd, entry->bufhead->ripemd, 20) == 0 && entry->vote)
+			entry->vote--;
+	}
+}
+static struct send_entry *queue_entry_next(void)
+{
+	int idx = qh, tqh;
+	struct send_entry *entry;
+
+	tqh = queue_idx_next(idx);
+	if (tqh == qt) {
+		logmsg(LOG_CRIT, "Send queue full!\n");
+		return NULL;
+	}
+	qh = tqh;
+	entry = snd_queue + idx;
+	if (entry->vote)
+		logmsg(LOG_ERR, "Message not confirmed by all!\n");
+	return entry;
+}
+
+static void msg_arrived(struct cpg_comm *cpg, uint32_t node,
+		const void *msg, size_t len)
+{
+	const struct package_head *mp = msg;
+	
+	if (mp->confirm == 0) {
 		printf("Node %d: %s\n", node, mp->msg);
+		memcpy(cpg->ripemd, mp->ripemd, 20);
+		cpg->confirm = 1;
+		cpgcomm_write(cpg, cpg->ripemd, 21);
+	} else
+		queue_confirm(mp->ripemd);
 }
 
 int main(int argc, char *argv[])
 {
 	struct cpg_comm *cpg;
 	int retv, llen, msglen;
-	char *ln, *buf;
+	char *ln;
 	struct sigaction sact;
+	struct send_entry *entry;
+	struct ripemd160 *ripe;
 
 
 	openlog("cpgmsg", LOG_PERROR, LOG_DAEMON);
 
+	ripe = ripemd160_init();
 	cpg = cpgcomm_init("blockchain", msg_arrived);
 	if (!cpg) {
 		logmsg(LOG_ERR, "Cannot initialize blockchain\n");
@@ -58,7 +133,6 @@ int main(int argc, char *argv[])
 	sigaction(SIGINT, &sact, NULL);
 	sigaction(SIGTERM, &sact, NULL);
 
-	buf = malloc(1024);
 	do {
 		ln = readline("? ");
 		if (*ln == 0) {
@@ -66,16 +140,32 @@ int main(int argc, char *argv[])
 			free(ln);
 			continue;
 		}
+		queue_tail_advance();
 		llen = strlen(ln);
-		msglen = sizeof(struct pkthead) + llen + 1;
-		memset(buf, 0, sizeof(struct pkthead));
-		memcpy(buf+sizeof(struct pkthead), ln, llen+1);
-		cpgcomm_write(cpg, buf, msglen);
+		msglen = sizeof(struct package_head) + llen + 1;
+		entry = queue_entry_next();
+		if (!entry)
+			break;
+		if (entry->bufhead == NULL) {
+			entry->bufhead = malloc(msglen);
+			entry->maxlen = msglen;
+		} else if (entry->maxlen < msglen) {
+			entry->bufhead = realloc(entry->bufhead, msglen);
+			entry->maxlen = msglen;
+		}
+		entry->vote = cpg_numnodes(cpg) - 1;
+		ripemd160_dgst(ripe, (const unsigned char *)ln, llen + 1);
+		memcpy(entry->bufhead->ripemd, ripe->H, 20);
+		ripemd160_reset(ripe);
+		entry->bufhead->confirm = 0;
+		memcpy(entry->bufhead->msg, ln, llen+1);
+		cpgcomm_write(cpg, entry->bufhead, msglen);
 		free(ln);
 	} while (finish == 0);
-	free(buf);
 
+	queue_free();
 	cpgcomm_exit(cpg);
+	ripemd160_exit(ripe);
 	closelog();
 	return retv;
 }

@@ -33,20 +33,27 @@ static void config_event(cpg_handle_t hd, const struct cpg_name *name,
 
 	if (memlen > 0) {
 		logmsg(LOG_NOTICE, "Current Members:");
-		for (i = 0, cm = mem; i < memlen; i++, cm++)
+		for (i = 0, cm = mem; i < memlen; i++, cm++) {
 			logmsg(LOG_NOTICE, " %d", (int)cm->nodeid);
+			cpg->nodon[cm->nodeid] = 1;
+		}
 		logmsg(LOG_NOTICE, " ");
 	}
 	if (lemlen > 0) {
 		logmsg(LOG_NOTICE, "Members Left:");
-		for (i = 0, cm = lem; i < lemlen; i++, cm++)
+		for (i = 0, cm = lem; i < lemlen; i++, cm++) {
 			logmsg(LOG_NOTICE, " %d", (int)cm->nodeid);
+			cpg->nodon[cm->nodeid] = 0;
+		}
 		logmsg(LOG_NOTICE, " ");
 	}
 	if (jemlen > 0) {
 		logmsg(LOG_NOTICE, "Members Joined:");
-		for (i = 0, cm = jem; i < jemlen; i++, cm++)
+		for (i = 0, cm = jem; i < jemlen; i++, cm++) {
 			logmsg(LOG_NOTICE, " %d", (int)cm->nodeid);
+			cpg->nodon[cm->nodeid] = 1;
+		}
+		logmsg(LOG_NOTICE, " ");
 	}
 	logmsg(LOG_NOTICE, "\n");
 }
@@ -70,7 +77,7 @@ static void mesg_arrived(cpg_handle_t hd, const struct cpg_name *name,
 			memcmp(name->value, cpg->group, name->length) != 0)
 		return;
 	if (cpg->rcvmsg)
-		cpg->rcvmsg(nodeid, msg, msglen);
+		cpg->rcvmsg(cpg, nodeid, msg, msglen);
 }
 
 void cpgcomm_write(struct cpg_comm *cpg, void *msg, int len)
@@ -85,7 +92,6 @@ void cpgcomm_write(struct cpg_comm *cpg, void *msg, int len)
 	count = 0;
 	cpg->iovec.iov_base = msg;
 	cpg->iovec.iov_len =  len;
-//	memcpy(cpg->iovec.iov_base, msg, len);
 	cpgret = cpg_mcast_joined(cpg->hand, CPG_TYPE_FIFO, &cpg->iovec, 1);
 	while (cpgret == CS_ERR_TRY_AGAIN && count < 10) {
 		count++;
@@ -111,7 +117,7 @@ static void *watch_mesg(void *arg)
 }
 
 struct cpg_comm *cpgcomm_init(const char *gname,
-		void (*rcvmsg)(uint32_t node, const void * msg, size_t len))
+		void (*rcvmsg)(struct cpg_comm *cpg, uint32_t node, const void * msg, size_t len))
 {
 	struct cpg_comm *cpg;
 	struct cpg_name gr;
