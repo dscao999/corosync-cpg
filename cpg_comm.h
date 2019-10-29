@@ -4,6 +4,7 @@
 #include <corosync/cpg.h>
 
 #define CPG_CHUNK_SIZE	3145728
+#define MAX_NUM_NODES	16
 
 struct cpg_comm {
 	void (*rcvmsg)(uint32_t node, const void *msg, size_t len);
@@ -13,6 +14,7 @@ struct cpg_comm {
 	uint32_t nodeid;
 	volatile int exflag;
 	char group[32];
+	unsigned char nodon[MAX_NUM_NODES];
 };
 
 struct cpg_comm *cpgcomm_init(const char *gname,

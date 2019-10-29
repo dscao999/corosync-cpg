@@ -11,11 +11,6 @@
 #include "cpg_comm.h"
 #include "loglog.h"
 
-struct msghead {
-	uint32_t nodeid;
-	unsigned len;
-};
-
 static void config_event(cpg_handle_t hd, const struct cpg_name *name,
 		const struct cpg_address *mem, size_t memlen,
 		const struct cpg_address *lem, size_t lemlen,
@@ -90,7 +85,7 @@ void cpgcomm_write(struct cpg_comm *cpg, void *msg, int len)
 	count = 0;
 	cpg->iovec.iov_base = msg;
 	cpg->iovec.iov_len =  len;
-	memcpy(cpg->iovec.iov_base, msg, len);
+//	memcpy(cpg->iovec.iov_base, msg, len);
 	cpgret = cpg_mcast_joined(cpg->hand, CPG_TYPE_FIFO, &cpg->iovec, 1);
 	while (cpgret == CS_ERR_TRY_AGAIN && count < 10) {
 		count++;
@@ -105,14 +100,12 @@ void cpgcomm_write(struct cpg_comm *cpg, void *msg, int len)
 static void *watch_mesg(void *arg)
 {
 	struct cpg_comm *cpg = arg;
-	static const struct timespec tm = {.tv_sec = 0, .tv_nsec = 100000000};
 	int cpgret;
 
 	do {
-		cpgret = cpg_dispatch(cpg->hand, CS_DISPATCH_ALL);
+		cpgret = cpg_dispatch(cpg->hand, CS_DISPATCH_ONE);
 		if (unlikely(cpgret != CS_OK))
 			logmsg(LOG_ERR, "cpg_dispatch failed: %d\n", cpgret);
-		nanosleep(&tm, NULL);
 	} while (cpg->exflag == 0);
 	return NULL;
 }
@@ -133,7 +126,7 @@ struct cpg_comm *cpgcomm_init(const char *gname,
 		logmsg(LOG_CRIT, "No Enough Memory!\n");
 		goto exit_10;
 	}
-	cpg->exflag = 0;
+	memset(cpg, 0, sizeof(struct cpg_comm));
 	strcpy(cpg->group, gname);
 	trigger.cpg_deliver_fn = mesg_arrived;
 	trigger.cpg_confchg_fn = config_event;
@@ -148,6 +141,7 @@ struct cpg_comm *cpgcomm_init(const char *gname,
 		goto exit_30;
 	}
 	cpg_local_get(cpg->hand, &cpg->nodeid);
+	cpg->nodon[cpg->nodeid] = 1;
 	cpg->rcvmsg = rcvmsg;
 	memcpy(gr.value, gname, gr.length);
 	cpgret = cpg_join(cpg->hand, &gr);
@@ -177,6 +171,7 @@ void cpgcomm_exit(struct cpg_comm *cpg)
 {
 	struct cpg_name gr;
 	int cpgret;
+	static const struct timespec tm = {0, 100000000};
 
 	cpg->exflag = 1;
 	gr.length = strlen(cpg->group);

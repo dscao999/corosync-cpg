@@ -43,6 +43,7 @@ int main(int argc, char *argv[])
 	char *ln, *buf;
 	struct sigaction sact;
 
+
 	openlog("cpgmsg", LOG_PERROR, LOG_DAEMON);
 
 	cpg = cpgcomm_init("blockchain", msg_arrived);
@@ -57,6 +58,7 @@ int main(int argc, char *argv[])
 	sigaction(SIGINT, &sact, NULL);
 	sigaction(SIGTERM, &sact, NULL);
 
+	buf = malloc(1024);
 	do {
 		ln = readline("? ");
 		if (*ln == 0) {
@@ -66,15 +68,12 @@ int main(int argc, char *argv[])
 		}
 		llen = strlen(ln);
 		msglen = sizeof(struct pkthead) + llen + 1;
-		buf = malloc(msglen);
 		memset(buf, 0, sizeof(struct pkthead));
 		memcpy(buf+sizeof(struct pkthead), ln, llen+1);
 		cpgcomm_write(cpg, buf, msglen);
-		free(buf);
 		free(ln);
 	} while (finish == 0);
-
-	cpg->exflag = 1;
+	free(buf);
 
 	cpgcomm_exit(cpg);
 	closelog();
