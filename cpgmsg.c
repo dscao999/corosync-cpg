@@ -14,7 +14,7 @@
 #include <assert.h>
 #include "cpg_comm.h"
 #include "loglog.h"
-#include "ecc256/ripemd160.h"
+#include "squeue.h"
 
 static volatile int finish = 0;
 
@@ -22,76 +22,6 @@ void sig_handler(int sig)
 {
 	if (sig == SIGTERM || sig == SIGINT)
 		finish = 1;
-}
-
-struct package_head {
-	unsigned char ripemd[20];
-	unsigned char confirm;
-	char msg[0];
-};
-
-struct send_entry {
-	struct package_head *bufhead;
-	unsigned long maxlen;
-	unsigned char vote;
-};
-
-static struct send_entry snd_queue[8];
-static int qh = 0, qt = 0;
-static inline int queue_idx_next(int idx)
-{
-	return (idx + 1) & 0x7;
-}
-static inline void queue_free(void)
-{
-	int i;
-
-	for (i = 0; i < 8; i++)
-		if (snd_queue[i].bufhead)
-			free(snd_queue[i].bufhead);
-}
-static inline void queue_tail_advance(void)
-{
-	int head = qh, tail = qt;
-	struct send_entry *entry;
-
-	while (tail != head) {
-		entry = snd_queue + tail;
-		if (entry->vote != 0)
-			break;
-		else
-			tail = queue_idx_next(tail);
-	}
-	qt = tail;
-}
-
-static inline void queue_confirm(const unsigned char ripemd[20])
-{
-	int head = qh, tail = qt;
-	int i;
-	struct send_entry *entry;
-
-	for (i = tail; i != head; i = queue_idx_next(i)) {
-		entry = snd_queue + i;
-		if (memcmp(ripemd, entry->bufhead->ripemd, 20) == 0 && entry->vote)
-			entry->vote--;
-	}
-}
-static struct send_entry *queue_entry_next(void)
-{
-	int idx = qh, tqh;
-	struct send_entry *entry;
-
-	tqh = queue_idx_next(idx);
-	if (tqh == qt) {
-		logmsg(LOG_CRIT, "Send queue full!\n");
-		return NULL;
-	}
-	qh = tqh;
-	entry = snd_queue + idx;
-	if (entry->vote)
-		logmsg(LOG_ERR, "Message not confirmed by all!\n");
-	return entry;
 }
 
 static void msg_arrived(struct cpg_comm *cpg, uint32_t node,
