@@ -12,7 +12,7 @@ struct mesg_head {
 struct send_entry {
 	struct mesg_head *msgbuf;
 	int len, buflen;
-	unsigned int ack;
+	volatile unsigned int ack;
 	unsigned int exp;
 };
 

@@ -2,7 +2,7 @@
 CFLAGS ?= -Wall -g
 LDFLAGS = -g
 
-.PHONY: all clean
+.PHONY: all clean release
 
 all: cpgmsg
 
@@ -12,3 +12,8 @@ cpgmsg: cpgmsg.o squeue.o cpg_comm.o
 clean:
 	rm -f cpgmsg
 	rm -f *.o
+
+release: CFLAGS += -O2
+release: LDFLAGS += -O2
+
+release: all
