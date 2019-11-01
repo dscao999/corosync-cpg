@@ -1,5 +1,6 @@
 #ifndef LOGLOG_DSCAO__
 #define LOGLOG_DSCAO__
+#include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
 #include <syslog.h>

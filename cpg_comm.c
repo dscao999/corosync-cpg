@@ -35,7 +35,7 @@ static void config_event(cpg_handle_t hd, const struct cpg_name *name,
 		logmsg(LOG_NOTICE, "Current Members:");
 		for (i = 0, cm = mem; i < memlen; i++, cm++) {
 			logmsg(LOG_NOTICE, " %d", (int)cm->nodeid);
-			cpg->nodon[cm->nodeid] = 1;
+			cpg->nodon |= (1 << cm->nodeid);
 		}
 		logmsg(LOG_NOTICE, " ");
 	}
@@ -43,7 +43,7 @@ static void config_event(cpg_handle_t hd, const struct cpg_name *name,
 		logmsg(LOG_NOTICE, "Members Left:");
 		for (i = 0, cm = lem; i < lemlen; i++, cm++) {
 			logmsg(LOG_NOTICE, " %d", (int)cm->nodeid);
-			cpg->nodon[cm->nodeid] = 0;
+			cpg->nodon &= ~(1 << cm->nodeid);
 		}
 		logmsg(LOG_NOTICE, " ");
 	}
@@ -51,7 +51,7 @@ static void config_event(cpg_handle_t hd, const struct cpg_name *name,
 		logmsg(LOG_NOTICE, "Members Joined:");
 		for (i = 0, cm = jem; i < jemlen; i++, cm++) {
 			logmsg(LOG_NOTICE, " %d", (int)cm->nodeid);
-			cpg->nodon[cm->nodeid] = 1;
+			assert(cpg->nodon & (1 << cm->nodeid));
 		}
 		logmsg(LOG_NOTICE, " ");
 	}
@@ -116,7 +116,7 @@ static void *watch_mesg(void *arg)
 	return NULL;
 }
 
-struct cpg_comm *cpgcomm_init(const char *gname,
+struct cpg_comm *cpgcomm_init(const char *gname, void *data,
 		void (*rcvmsg)(struct cpg_comm *cpg, uint32_t node, const void * msg, size_t len))
 {
 	struct cpg_comm *cpg;
@@ -147,8 +147,9 @@ struct cpg_comm *cpgcomm_init(const char *gname,
 		goto exit_30;
 	}
 	cpg_local_get(cpg->hand, &cpg->nodeid);
-	cpg->nodon[cpg->nodeid] = 1;
+	cpg->nodon = 0;
 	cpg->rcvmsg = rcvmsg;
+	cpg->privdata = data;
 	memcpy(gr.value, gname, gr.length);
 	cpgret = cpg_join(cpg->hand, &gr);
 	if (unlikely(cpgret != CS_OK)) {
